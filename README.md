@@ -54,6 +54,31 @@ On open it adds anything new, skips duplicates, then strips the parameters from
 the URL so a reload can't add them twice. Same trick works later — to add a book
 to someone's phone, just send another link.
 
+## Two ways it can answer
+
+**With an API key** (Ajustes → *Clave de API*) the answer streams into the app
+itself, formatted — headings, bullets, bold terms, reading typography. No app
+switch, nothing to paste. The key lives in `localStorage` on that one device.
+
+**Without a key** it opens Claude with the question already typed; you just hit
+send. Free if you already pay for Claude.
+
+Both work, and the app picks automatically based on whether a key is set — so
+a missing key degrades to the hand-off rather than breaking.
+
+Note that **a Claude Pro/Max subscription does not cover API usage** — the API
+is billed separately, at roughly 3–5 US cents per summary depending on length.
+
+Effort scales with the requested length: `Rápido` runs at low effort, `Completo`
+at medium, `A fondo` at high.
+
+## Lengths
+
+`Rápido` ~200 words, `Completo` ~900, `A fondo` ~2500. The earlier values were
+far too short — 350 words does not do justice to a whole book, and because the
+answer renders in-app rather than in a chat, long answers cost little: you can
+skim them.
+
 ## Fiction vs non-fiction
 
 Each book is tagged, and the tag changes what's on screen. For a novel the first

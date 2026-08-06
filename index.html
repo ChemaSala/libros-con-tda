@@ -243,6 +243,35 @@
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .hide { display: none !important; }
+
+  /* ---------- respuesta ---------- */
+  #vAns { padding-bottom: 108px; }
+  .status {
+    color: var(--soft); font-size: 15px;
+    padding: 10px 0 2px;
+  }
+  .status.err { color: #b3261e; }
+  @media (prefers-color-scheme: dark) { .status.err { color: #f2b8b5; } }
+  .status .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); margin-right: 7px; vertical-align: middle;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+
+  /* Tipografía de lectura: es lo único que va a mirar de verdad. */
+  .prose { font-size: 17.5px; line-height: 1.62; }
+  .prose p { margin: 0 0 15px; }
+  .prose h2 {
+    font-family: var(--serif); font-size: 20px; line-height: 1.25;
+    margin: 26px 0 9px; color: var(--accent);
+  }
+  .prose h3 { font-size: 17px; margin: 20px 0 7px; }
+  .prose ul { margin: 0 0 15px; padding-left: 22px; }
+  .prose li { margin: 0 0 8px; }
+  .prose strong { font-weight: 700; }
+  .prose em { font-style: italic; }
+  .prose > :first-child { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -302,7 +331,10 @@
       <option value="francés">Francés</option>
     </select>
 
-    <p class="hint" id="askHint">Se abre Claude con la pregunta ya escrita. Solo dale enviar.</p>
+    <p class="hint" id="askHint"></p>
+    <div style="text-align:center; margin-top:2px">
+      <button class="linkish" id="btnOpenClaude">o ábrelo en la app de Claude</button>
+    </div>
 
     <details class="peek">
       <summary>Ver la pregunta exacta</summary>
@@ -316,6 +348,23 @@
     <div class="actionbar">
       <div class="inner">
         <button class="primary" id="btnAsk">Pregúntale a Claude</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== RESPUESTA ============== -->
+  <section id="vAns" class="hide">
+    <button class="linkish back" id="btnAnsBack">← Volver</button>
+    <h2 class="bookhead" id="aTitle"></h2>
+    <p class="bookby" id="aWhat"></p>
+
+    <div id="aStatus" class="status">Pensando…</div>
+    <article class="prose" id="aBody"></article>
+
+    <div class="actionbar">
+      <div class="inner" style="display:flex; gap:9px">
+        <button class="ghost" style="flex:1" id="btnAnsCopy">Copiar</button>
+        <button class="ghost" style="flex:1" id="btnAnsAgain">Otra vez</button>
       </div>
     </div>
   </section>
@@ -362,6 +411,13 @@
     edición, no los del original.
   </p>
 
+  <label class="lbl">Clave de API</label>
+  <input type="password" id="setKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+  <p class="hint" style="text-align:left; margin-top:8px">
+    Con clave, la respuesta aparece aquí mismo, ya formateada. Sin clave, se abre
+    Claude con la pregunta ya escrita. Se guarda solo en este teléfono.
+  </p>
+
   <div style="height:18px"></div>
   <button class="primary" id="btnSetClose">Listo</button>
 </div>
@@ -390,10 +446,12 @@ const SEED_BOOKS = [];
 const LS_BOOKS = "ltda.books.v1";
 const LS_SET   = "ltda.settings.v1";
 
+/* La respuesta se lee dentro de la app, así que lo largo cuesta poco:
+   puede hojear. 350 palabras no le hacen justicia a un libro entero. */
 const DEPTHS = [
-  { id: "rapido",  label: "Rápido",  palabras: 100 },
-  { id: "normal",  label: "Normal",  palabras: 350 },
-  { id: "afondo",  label: "A fondo", palabras: 800 },
+  { id: "rapido",  label: "Rápido",  palabras: 200 },
+  { id: "normal",  label: "Completo", palabras: 900 },
+  { id: "afondo",  label: "A fondo", palabras: 2500 },
 ];
 
 const SCOPES = [
@@ -434,7 +492,7 @@ const purposeList = () => PURPOSES[(state.book && state.book.tipo) || "novela"] 
 
 const state = {
   books: [],
-  settings: { lang: "español", depth: "rapido", traduccion: true },
+  settings: { lang: "español", depth: "rapido", traduccion: true, apiKey: "" },
   book: null,
   purpose: "ponme",
   scope: "hasta",
@@ -495,67 +553,125 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), 2400);
 }
 
-/* ---------------- construcción de la pregunta ----------------
-   Reemplazado por el sistema de prompts afinado; la forma es
-   preámbulo + propósito + alcance + largo. */
+/* ================= construcción de la pregunta =================
+   Orden fijo: LIBRO · alcance · propósito · FORMATO · largo · cierre.
 
-function edicion() {
-  return state.settings.traduccion
-    ? "Estoy leyendo la traducción al español, así que usa los nombres de personajes, lugares y términos TAL COMO APARECEN EN LA EDICIÓN EN ESPAÑOL, no los del original."
-    : "";
+   El propósito va DESPUÉS del alcance a propósito: cuando se
+   contradicen, gana el que va después, y así queda explícito.
+   El cierre es la ÚLTIMA línea del prompt — pedir un repaso final es
+   lo que mejor sostiene el límite de spoilers.
+   ================================================================ */
+
+const corta = (s, n) => {
+  s = (s || "").trim();
+  return s.length > n ? s.slice(0, n - 1).trim() + "…" : s;
+};
+
+function bloqueLibro(b, nofic) {
+  const t = corta(b.titulo, 40);
+  const a = corta(b.autor, 20);
+  const cual = a ? `"${t}" de ${a}` : `"${t}"`;
+  if (!state.settings.traduccion) {
+    return `Leo ${cual}. No inventes: si no lo conoces bien, dilo al final.`;
+  }
+  // Reconocer el original (Claude lo conoce mejor así) pero responder con
+  // los nombres de la edición que él tiene enfrente. El ejemplo cambia
+  // según el libro: en una novela lo que se traduce son los nombres, en
+  // no ficción los términos.
+  const ejemplo = nofic
+    ? `escribe el término en español con el original entre paréntesis`
+    : `escribe Roca (Rocky)`;
+  return `Leo ${cual} en español. Reconócelo por su título original, pero usa los nombres y términos de la edición en español; si esa traducción dejó el original, déjalo igual, y si no estás seguro, ${ejemplo}. No inventes: si no lo conoces bien, dilo al final.`;
 }
+
+/* La respuesta se muestra formateada en la app, así que sí conviene
+   markdown ligero: le da dónde descansar la vista. Tablas no —
+   en un celular no caben. */
+function bloqueFormato(lang) {
+  const base = `de adulto a adulto: sin emojis, exclamaciones ni diminutivos; párrafos de 2-3 renglones; usa "## " para separar secciones, viñetas con "- " y **negritas** para los nombres y términos, nunca tablas ni listas anidadas; cada nombre con su rol pegado ("Ana, la vecina"). Empieza directo, sin repetir la pregunta.`;
+  return lang === "español"
+    ? `Español de México (celular, no móvil), ${base}`
+    : `Responde en ${lang}, ${base}`;
+}
+
+/* El límite significa cosas distintas según el libro: en una novela
+   protege la trama; en no ficción impide que le expliquen algo con un
+   concepto que el autor todavía no le presentó — igual de inservible. */
+function bloqueAlcance(scope, pct, parte, nofic) {
+  if (scope === "todo") {
+    return { linea: `Ya lo terminé: cuéntame todo el libro, final incluido.`, cierre: "" };
+  }
+  if (scope === "parte") {
+    return {
+      linea: `Me interesa esta parte: "${corta(parte, 80) || "la que te digo"}". Abre con "Te ubico: ..." nombrando la parte que crees que es; si la recuerdo mal, toma la más parecida anterior al ${pct}%. No cuentes nada posterior a esa parte ni al ${pct}%.`,
+      cierre: `Relee y quita lo posterior a esa parte.`,
+    };
+  }
+  return {
+    linea: nofic
+      ? `Voy en el ${pct}%. Abre con "Te ubico: ..." y la idea en la que voy. El libro termina ahí: lo de después no existe. No uses conceptos, términos ni conclusiones que el autor presenta más adelante, por conocidos que sean. Ante la duda, déjalo fuera, sin avisar.`
+      : `Voy en el ${pct}%. Abre con "Te ubico: ..." y la escena de ese punto. El libro termina ahí: lo de después no existe. No adelantes giros, muertes ni identidades, por famosos que sean o salgan en la contraportada, ni digas "más adelante verás". Ante la duda, déjalo fuera, sin avisar.`,
+    cierre: `Relee y quita lo posterior al ${pct}%.`,
+  };
+}
+
+const LARGO = {
+  rapido: (n) => `Máximo ${n} palabras, sencillas y sin análisis; si hay lista, 3 puntos de una línea.`,
+  normal: (n, nofic) =>
+    `Unas ${n} palabras, con ${nofic ? "ejemplos que me hagan reconocer las ideas" : "detalles que me hagan reconocer las escenas"}; listas de 6 puntos.`,
+  afondo: (n) => `Hasta ${n} palabras; listas de 10 puntos máximo; cierra con un párrafo de análisis.`,
+};
+
+const PROPOSITO = {
+  novela: {
+    ponme:     `Ponme al día: DÓNDE ME QUEDÉ (la escena exacta), QUIÉN IMPORTA (quién es y qué quiere cada quien), QUÉ PASÓ (lo esencial, con más peso a lo reciente) y QUÉ ESTÁ EN JUEGO (lo que quedó abierto).`,
+    quien:     `Hazme un acordeón de personajes, del más importante al menos: nombre (y apodos) - quién es - qué quiere. Uno por línea, sin tabla. Avísame si hay nombres que se parecen y me pueda confundir.`,
+    explicame: `No entendí esta parte. Explícamela como si me la contaras en voz alta: QUÉ PASÓ, POR QUÉ pasó y QUÉ ME PERDÍ (el dato anterior que me faltaba). Si no te dije cuál, toma la más confusa del tramo.`,
+    vale:      `¿Me conviene seguir? De lo que viene, solo en abstracto (ritmo, tono, si se resuelve): ni hechos, ni nombres nuevos, ni giros, aun con spoilers permitidos. Cierra: seguir, saltarme algo o soltarlo sin culpa.`,
+    capitulos: `Dame una nota por capítulo, en orden: "Cap. N - qué pasa y quién sale", una o dos frases. Si son muchos, agrupa ("Caps. 12-15 - ..."). Si te dije hasta dónde voy, corta en el capítulo donde caigo.`,
+    temas:     `Explícame qué hace el autor: 3 o 4 TEMAS, cada uno anclado a una escena concreta, y qué hace con la forma (narrador, tono). Solo con lo que ya leí; si un tema se completa después, no lo menciones.`,
+    ideas:     `Dame LA IDEA CENTRAL en una frase, luego las IDEAS CLAVE del libro, cada una con la escena que la sostiene, y cierra con QUÉ ME LLEVO: 2 cosas.`,
+  },
+  nofic: {
+    ideas:     `Es no ficción. Dame LA TESIS en una frase, luego las IDEAS CLAVE (nombre, una frase y el ejemplo o dato con que el autor la sostiene) y cierra con QUÉ HAGO CON ESTO: 2 cosas aplicables.`,
+    ponme:     `Ponme al día: DÓNDE ME QUEDÉ (la idea exacta), QUÉ HA EXPLICADO hasta aquí (lo esencial, con más peso a lo reciente), CÓMO SE ENCADENA una idea con la siguiente y HACIA DÓNDE VA.`,
+    explicame: `No entendí esta parte. Explícamela como si me la contaras en voz alta, con un ejemplo concreto: QUÉ DICE el autor, POR QUÉ lo dice y QUÉ ME PERDÍ (la idea anterior que me faltaba). Si no te dije cuál, toma la más confusa del tramo.`,
+    conceptos: `Hazme un acordeón de conceptos, en el orden en que aparecen: término - qué significa en una frase - para qué lo usa el autor. Uno por línea, sin tabla. Avísame si hay dos que se parecen y me pueda confundir.`,
+    capitulos: `Dame una nota por capítulo, en orden: "Cap. N - qué idea presenta y para qué sirve", una o dos frases. Si son muchos, agrupa ("Caps. 12-15 - ..."). Si te dije hasta dónde voy, corta en el capítulo donde caigo.`,
+    vale:      `¿Me conviene seguir? De lo que viene, solo en abstracto (si se pone más práctico o más teórico, si se repite): sin ideas nuevas ni conclusiones. Cierra: seguir, saltarme algo o soltarlo sin culpa.`,
+    temas:     `Explícame el fondo: qué está intentando cambiar el autor, en qué se apoya (datos, estudios, casos) y qué le critican. Solo con lo que ya leí.`,
+  },
+};
 
 function buildPrompt() {
   const b = state.book;
   if (!b) return "";
-  const pct = Number($("pos").value);
+
+  const nofic = b.tipo === "nofic";
+  const pct   = Number($("pos").value);
+  const lang  = b.lang || "español";
   const depth = DEPTHS.find((d) => d.id === b.depth) || DEPTHS[0];
-  const lang = b.lang || "español";
-  const parte = ($("partText").value || "").trim();
 
-  const libro = `"${b.titulo}"` + (b.autor ? ` de ${b.autor}` : "");
+  const alcance   = bloqueAlcance(state.scope, pct, $("partText").value, nofic);
+  const proposito = (PROPOSITO[nofic ? "nofic" : "novela"] || {})[state.purpose]
+                 || PROPOSITO.novela.ponme;
+  const largo     = (LARGO[depth.id] || LARGO.rapido)(depth.palabras, nofic);
 
-  const esNofic = b.tipo === "nofic";
-
-  // En una novela el límite protege el argumento; en no ficción protege
-  // el orden en que el autor construye las ideas — explicarle algo con un
-  // concepto que todavía no ha leído es igual de inútil que un spoiler.
-  const alcance = {
-    hasta: esNofic
-      ? `Voy en el ${pct}% del libro. Explícame las cosas usando ÚNICAMENTE lo que el autor ya presentó hasta ese punto. No uses conceptos, términos ni conclusiones que aparecen después del ${pct}%, aunque sean lo más conocido del libro.`
-      : `Voy en el ${pct}% del libro. NO me cuentes NADA que pase después de ese punto: ni giros, ni finales, ni quién muere, ni insinuaciones. Si algo famoso de este libro pasa después del ${pct}%, omítelo por completo.`,
-    todo:  `Puedes contarme el libro completo, incluido el final. No te guardes nada.`,
-    parte: `Háblame solo de esta parte: "${parte || "la parte que te indico"}". Si no ubicas esa parte con seguridad, dímelo en una línea en lugar de inventar.`,
-  }[state.scope];
-
-  const largo = `Responde en ${lang}, en unas ${depth.palabras} palabras, en lenguaje sencillo y directo. Párrafos cortos, sin tablas ni markdown pesado. Empieza directo con la respuesta: nada de "¡Claro!" ni repetir mi pregunta. Si no conoces bien este libro, dímelo en una línea en vez de inventar.`;
-
-  const cuerpo = {
-    ponme: esNofic
-      ? `Estoy leyendo ${libro} y perdí el hilo. Recuérdame qué ha explicado el autor hasta aquí, cómo se conecta una idea con la siguiente y hacia dónde va.`
-      : `Estoy leyendo ${libro} y perdí el hilo. Recuérdame quiénes son los personajes principales ahora mismo, qué acaba de pasar y qué estaba por descubrirse.`,
-    quien:     `Estoy leyendo ${libro}. Hazme una lista de quién es quién: cada personaje que ya apareció, quién es en una línea, cómo se relaciona con los demás y lo último importante que hizo.`,
-    conceptos: `Estoy leyendo ${libro}. Hazme una lista de los términos y conceptos que el autor ya introdujo, cada uno explicado en una o dos líneas con palabras simples, en el orden en que aparecen.`,
-    explicame: esNofic
-      ? `Estoy leyendo ${libro}. Hay una parte que leí pero no entendí. Explícamela con calma y con un ejemplo concreto: qué está diciendo el autor, por qué lo dice y para qué sirve.`
-      : `Estoy leyendo ${libro}. Hay una parte que leí pero no entendí. Explícamela con calma: qué pasó realmente, por qué pasó y por qué importa para la historia.`,
-    vale:      `Estoy leyendo ${libro} y no sé si continuar. Sin spoilers: recuérdame qué me estaba enganchando, qué quedó abierto, y dime si vale la pena seguir y por qué. Sé honesto: si el libro decae, dímelo.`,
-    ideas:     `Estoy leyendo ${libro}. Dime las ideas clave: el argumento central en una frase, las ideas principales una por una, y qué me llevo de práctico.`,
-    capitulos: esNofic
-      ? `Estoy leyendo ${libro}. Hazme un repaso capítulo por capítulo: número, qué idea presenta y para qué sirve, en dos o tres líneas cada uno.`
-      : `Estoy leyendo ${libro}. Hazme un repaso capítulo por capítulo: número, dos o tres líneas de qué pasa, y qué personaje o idea nueva aparece.`,
-    temas: esNofic
-      ? `Estoy leyendo ${libro}. Explícame el fondo: qué está intentando cambiar el autor, en qué se apoya y qué le critican.`
-      : `Estoy leyendo ${libro}. Explícame los temas de fondo: de qué trata realmente, qué está haciendo el autor y cómo está construido.`,
-  }[state.purpose];
-
-  return [cuerpo, edicion(), alcance, largo].filter(Boolean).join("\n\n");
+  return [
+    bloqueLibro(b, nofic),
+    alcance.linea,
+    proposito,
+    bloqueFormato(lang),
+    largo,
+    alcance.cierre,
+  ].filter(Boolean).join("\n");
 }
 
 /* ---------------- vistas ---------------- */
 
 function showLib() {
   $("vBook").classList.add("hide");
+  $("vAns").classList.add("hide");
   $("vLib").classList.remove("hide");
   renderLib();
   window.scrollTo(0, 0);
@@ -662,6 +778,12 @@ function refresh() {
   $("posOut").textContent = pct + "%";
   $("preview").textContent = buildPrompt();
 
+  const conClave = !!state.settings.apiKey;
+  $("askHint").textContent = conClave
+    ? "La respuesta aparece aquí mismo."
+    : "Se abre Claude con la pregunta ya escrita. Solo dale enviar.";
+  $("btnOpenClaude").classList.toggle("hide", !conClave);
+
   // El % solo significa algo cuando el alcance depende de él.
   const usaPct = state.scope === "hasta";
   $("pos").style.opacity = usaPct ? "1" : ".4";
@@ -674,36 +796,179 @@ function refresh() {
   }
 }
 
+/* ---------------- markdown → HTML ----------------
+   Mini-renderer: encabezados, viñetas, negritas, cursivas. Se escapa
+   TODO primero y el formato se aplica después, así nada de lo que
+   llegue del modelo puede inyectar HTML. */
+
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function mdToHtml(md) {
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ESCAPES[c]);
+  const inline = (s) =>
+    esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+
+  let html = "";
+  let enLista = false;
+  const cerrar = () => { if (enLista) { html += "</ul>"; enLista = false; } };
+
+  for (const raw of String(md).split("\n")) {
+    const line = raw.trim();
+    if (!line) { cerrar(); continue; }
+
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      cerrar();
+      // "##" es el encabezado de sección que pide el prompt: que caiga
+      // en h2, que es el que está estilizado.
+      const lvl = Math.min(Math.max(h[1].length, 2), 4);
+      html += `<h${lvl}>${inline(h[2])}</h${lvl}>`;
+      continue;
+    }
+    const li = line.match(/^[-*•]\s+(.*)$/);
+    if (li) {
+      if (!enLista) { html += "<ul>"; enLista = true; }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
+    cerrar();
+    html += `<p>${inline(line)}</p>`;
+  }
+  cerrar();
+  return html;
+}
+
 /* ---------------- acción principal ---------------- */
+
+function abrirEnClaude(q) {
+  const ta = document.createElement("textarea");
+  ta.value = q;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.top = "-1000px";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch {}
+  ta.remove();
+  try { navigator.clipboard.writeText(q); } catch {}
+  window.open("https://claude.ai/new?q=" + encodeURIComponent(q), "_blank", "noopener");
+}
 
 async function ask() {
   const q = buildPrompt();
-  if (!q) return;
+  if (!q || !state.book) return;
 
-  if (state.book) {
-    state.book.used = (state.book.used || 0) + 1;
-    saveBooks();
+  state.book.used = (state.book.used || 0) + 1;
+  saveBooks();
+
+  // Con clave contesta aquí mismo; sin clave, se abre Claude. Que
+  // funcione de las dos formas evita que falte una pieza y no sirva nada.
+  if (state.settings.apiKey) {
+    mostrarRespuesta();
+    responder(q);
+  } else {
+    abrirEnClaude(q);
+    toast("Copiada por si acaso");
   }
+}
 
-  // Copiamos SIEMPRE, aunque el parámetro funcione: si la app de
-  // Claude ignora la pregunta pre-escrita, todavía puede pegarla.
+function mostrarRespuesta() {
+  const p = purposeList().find((x) => x.id === state.purpose);
+  $("vBook").classList.add("hide");
+  $("vAns").classList.remove("hide");
+  $("aTitle").textContent = state.book.titulo;
+  $("aWhat").textContent = (p ? p.label : "") +
+    (state.scope === "hasta" ? ` · ${$("pos").value}%` : state.scope === "todo" ? " · todo el libro" : " · una parte");
+  $("aBody").innerHTML = "";
+  setStatus("Pensando…", false, true);
+  window.scrollTo(0, 0);
+}
+
+function setStatus(txt, esError, cargando) {
+  const el = $("aStatus");
+  el.classList.toggle("hide", !txt);
+  el.classList.toggle("err", !!esError);
+  el.innerHTML = txt ? (cargando ? '<span class="dot"></span>' : "") + mdToHtml(txt).replace(/^<p>|<\/p>$/g, "") : "";
+}
+
+const EFFORT = { rapido: "low", normal: "medium", afondo: "high" };
+
+async function responder(q) {
+  const key = state.settings.apiKey;
+  const depth = (state.book && state.book.depth) || "rapido";
+  let texto = "";
+
   try {
-    await navigator.clipboard.writeText(q);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = q;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.top = "-1000px";
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand("copy"); } catch {}
-    ta.remove();
-  }
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        // Sin esto el navegador bloquea la llamada por CORS.
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-opus-5",
+        max_tokens: 16000,
+        stream: true,
+        output_config: { effort: EFFORT[depth] || "medium" },
+        messages: [{ role: "user", content: q }],
+      }),
+    });
 
-  const url = "https://claude.ai/new?q=" + encodeURIComponent(q);
-  window.open(url, "_blank", "noopener");
-  toast("Copiada por si acaso");
+    if (!res.ok) {
+      const detalle = await res.text();
+      throw new Error(mensajeError(res.status, detalle));
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let stop = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lineas = buf.split("\n");
+      buf = lineas.pop();
+
+      for (const l of lineas) {
+        if (!l.startsWith("data:")) continue;
+        let ev;
+        try { ev = JSON.parse(l.slice(5).trim()); } catch { continue; }
+
+        if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+          if (!texto) setStatus("", false, false);
+          texto += ev.delta.text;
+          $("aBody").innerHTML = mdToHtml(texto);
+        } else if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) {
+          stop = ev.delta.stop_reason;
+        }
+      }
+    }
+
+    if (stop === "refusal") {
+      setStatus("Claude no quiso responder esto. Prueba con “Abrir en Claude”.", true, false);
+    } else if (!texto) {
+      setStatus("Llegó una respuesta vacía. Inténtalo otra vez.", true, false);
+    } else {
+      setStatus("", false, false);
+    }
+  } catch (e) {
+    setStatus(String(e.message || e), true, false);
+  }
+}
+
+function mensajeError(status, detalle) {
+  if (status === 401) return "La clave de API no es válida. Revísala en Ajustes.";
+  if (status === 429) return "Demasiadas peticiones seguidas. Espera un momento y vuelve a intentar.";
+  if (status === 400 && /credit|balance/i.test(detalle)) return "La cuenta de API no tiene saldo.";
+  if (status >= 500) return "Claude está saturado. Inténtalo en un minuto.";
+  return `No se pudo conectar (${status}). Puedes usar “Abrir en Claude”.`;
 }
 
 /* ---------------- hojas ---------------- */
@@ -751,6 +1016,7 @@ function addBook() {
 
 function renderSettings() {
   $("setLang").value = state.settings.lang;
+  $("setKey").value = state.settings.apiKey || "";
 
   const dw = $("setDepth");
   dw.innerHTML = "";
@@ -793,8 +1059,37 @@ $("newAuthor").addEventListener("keydown", (e) => { if (e.key === "Enter") addBo
 
 $("btnSettings").onclick = () => { renderSettings(); openSheet("sheetSet"); };
 $("setLang").addEventListener("change", () => { state.settings.lang = $("setLang").value; saveSettings(); });
+$("setKey").addEventListener("change", () => {
+  state.settings.apiKey = $("setKey").value.trim();
+  saveSettings();
+  toast(state.settings.apiKey ? "Clave guardada" : "Clave borrada");
+});
 $("btnSetClose").onclick = closeSheets;
 $("scrim").onclick = closeSheets;
+
+/* respuesta */
+$("btnAnsBack").onclick = () => {
+  $("vAns").classList.add("hide");
+  $("vBook").classList.remove("hide");
+  window.scrollTo(0, 0);
+};
+$("btnAnsCopy").onclick = async () => {
+  const t = $("aBody").innerText.trim();
+  if (!t) return;
+  try { await navigator.clipboard.writeText(t); } catch {}
+  toast("Copiado");
+};
+$("btnAnsAgain").onclick = () => {
+  const q = buildPrompt();
+  if (!q) return;
+  $("aBody").innerHTML = "";
+  setStatus("Pensando…", false, true);
+  responder(q);
+};
+$("btnOpenClaude").onclick = () => {
+  const q = buildPrompt();
+  if (q) { abrirEnClaude(q); toast("Copiada por si acaso"); }
+};
 
 $("btnRemove").onclick = () => {
   if (!state.book) return;
