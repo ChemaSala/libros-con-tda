@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Libros con TDA">
+  <rect width="512" height="512" rx="112" fill="#a8541f"/>
+  <!-- an open book, with the right page still to come -->
+  <path d="M96 150c48-22 104-22 152 0v230c-48-22-104-22-152 0z" fill="#f6f2ea"/>
+  <path d="M416 150c-48-22-104-22-152 0v230c48-22 104-22 152 0z" fill="#f6f2ea" opacity=".55"/>
+  <rect x="248" y="140" width="16" height="248" rx="8" fill="#f6f2ea"/>
+  <!-- the bookmark: the point you left off -->
+  <path d="M312 120h56v132l-28-24-28 24z" fill="#ffce7a"/>
+</svg>

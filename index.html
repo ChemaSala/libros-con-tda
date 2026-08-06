@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#a8541f" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17181b" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Retoma cualquier libro sin releer nada.">
+<title>Libros con TDA</title>
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Libros con TDA">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+
+<style>
+  :root {
+    --paper:     #f6f2ea;
+    --card:      #fffdf8;
+    --ink:       #23201c;
+    --soft:      #6b6459;
+    --line:      #e2dacb;
+    --accent:    #a8541f;
+    --accent-in: #ffffff;
+    --tint:      #f5e7da;
+    --radius: 16px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #17181b;
+      --card:      #212429;
+      --ink:       #ece7de;
+      --soft:      #9c968a;
+      --line:      #343841;
+      --accent:    #e0925c;
+      --accent-in: #1a1207;
+      --tint:      #33261c;
+    }
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 17px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
+  }
+  .wrap {
+    max-width: 620px;
+    margin: 0 auto;
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(28px + var(--safe-b));
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: 25px;
+    margin: 4px 0 2px;
+    letter-spacing: -.01em;
+  }
+  .tagline { color: var(--soft); font-size: 14.5px; margin: 0 0 18px; }
+
+  /* ---------- generic controls ---------- */
+  button { font: inherit; color: inherit; }
+
+  .primary {
+    display: block; width: 100%;
+    background: var(--accent); color: var(--accent-in);
+    border: none; border-radius: 14px;
+    padding: 17px 20px;
+    font-size: 18px; font-weight: 700;
+    cursor: pointer;
+    min-height: 56px;
+  }
+  .primary:active { filter: brightness(.93); }
+  .primary:disabled { opacity: .45; }
+
+  .ghost {
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 16px;
+    font-size: 16px; cursor: pointer; min-height: 46px;
+  }
+  .ghost:active { background: var(--tint); }
+
+  .linkish {
+    background: none; border: none; padding: 8px 0;
+    color: var(--soft); font-size: 15px; cursor: pointer;
+  }
+  .linkish:active { color: var(--accent); }
+
+  input[type=text], select {
+    width: 100%;
+    font: inherit; font-size: 17px;      /* 16px+ stops iOS zooming on focus */
+    color: var(--ink); background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 14px; min-height: 50px;
+  }
+  input[type=text]:focus, select:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px;
+  }
+  label.lbl {
+    display: block; font-size: 14px; font-weight: 700;
+    color: var(--soft); text-transform: uppercase; letter-spacing: .04em;
+    margin: 22px 0 9px;
+  }
+
+  /* ---------- library ---------- */
+  .book {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; text-align: left;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 5px solid var(--accent);
+    border-radius: 14px;
+    padding: 15px 16px; margin-bottom: 10px;
+    cursor: pointer; min-height: 62px;
+  }
+  .book:active { background: var(--tint); }
+  .book .meta { flex: 1; min-width: 0; }
+  .book .t {
+    font-family: var(--serif); font-size: 18px; line-height: 1.25;
+    display: block;
+  }
+  .book .a { color: var(--soft); font-size: 14px; display: block; margin-top: 2px; }
+  .book .pc {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent); font-weight: 700; font-size: 15px;
+    flex-shrink: 0;
+  }
+  .addbook {
+    width: 100%; background: transparent;
+    border: 2px dashed var(--line); border-radius: 14px;
+    padding: 17px; font-size: 17px; color: var(--soft);
+    cursor: pointer; min-height: 58px;
+  }
+  .addbook:active { border-color: var(--accent); color: var(--accent); }
+
+  .empty { color: var(--soft); text-align: center; padding: 26px 8px; }
+
+  /* ---------- detail ---------- */
+  .back { margin: 2px 0 12px; }
+  .bookhead { font-family: var(--serif); font-size: 24px; line-height: 1.2; margin: 0; }
+  .bookby { color: var(--soft); margin: 3px 0 4px; font-size: 15px; }
+
+  .slider-row { display: flex; align-items: center; gap: 14px; }
+  input[type=range] {
+    flex: 1; accent-color: var(--accent);
+    height: 40px; margin: 0;
+  }
+  .pct {
+    font-family: var(--serif); font-size: 24px;
+    min-width: 66px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .card {
+    background: var(--card); border: 1.5px solid var(--line);
+    border-radius: 13px; padding: 13px 13px;
+    text-align: left; cursor: pointer; min-height: 64px;
+    display: flex; align-items: center;
+    font-size: 16px; font-weight: 600; line-height: 1.25;
+  }
+  .card.on {
+    border-color: var(--accent); background: var(--tint); color: var(--accent);
+  }
+  .card.wide { grid-column: 1 / -1; }
+
+  .seg { display: flex; gap: 0; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .seg button {
+    flex: 1; background: var(--card); border: none;
+    padding: 13px 6px; font-size: 15.5px; font-weight: 600;
+    cursor: pointer; min-height: 50px;
+    border-right: 1px solid var(--line);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: var(--accent); color: var(--accent-in); }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Barra de acción fija: puede tocar el botón en cualquier momento sin
+     recorrer los controles. Va fija de verdad (no sticky) porque sticky
+     se encimaba sobre las tarjetas. */
+  .actionbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--paper);
+    border-top: 1px solid var(--line);
+    padding: 11px 16px calc(11px + var(--safe-b));
+  }
+  .actionbar .inner { max-width: 620px; margin: 0 auto; }
+  /* Espacio suficiente para que la barra nunca tape el contenido. */
+  #vBook { padding-bottom: 108px; }
+
+  .hint { color: var(--soft); font-size: 13.5px; text-align: center; margin: 12px 0 0; }
+
+  details.peek { margin-top: 18px; }
+  details.peek summary { color: var(--soft); font-size: 15px; cursor: pointer; padding: 6px 0; }
+  pre.q {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px; margin: 8px 0 0;
+    white-space: pre-wrap; word-wrap: break-word;
+    font-size: 13px; line-height: 1.5; color: var(--soft);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    max-height: 260px; overflow: auto;
+  }
+
+  /* ---------- sheet (add book / settings) ---------- */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; z-index: 40;
+  }
+  .scrim.open { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 41;
+    background: var(--paper);
+    border-radius: 20px 20px 0 0;
+    padding: 20px 16px calc(20px + var(--safe-b));
+    transform: translateY(101%);
+    transition: transform .22s ease;
+    max-height: 88vh; overflow: auto;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet h2 { font-family: var(--serif); font-size: 21px; margin: 0 0 4px; }
+  .sheet p.sub { color: var(--soft); font-size: 14.5px; margin: 0 0 14px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(22px + var(--safe-b));
+    transform: translateX(-50%) translateY(14px);
+    background: var(--ink); color: var(--paper);
+    padding: 13px 22px; border-radius: 999px;
+    font-weight: 600; font-size: 15px;
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+    z-index: 60; max-width: 88vw; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Libros con TDA</h1>
+    <p class="tagline" id="tagline">Retoma cualquier libro sin releer nada.</p>
+  </header>
+
+  <!-- ============== BIBLIOTECA ============== -->
+  <section id="vLib">
+    <div id="bookList"></div>
+    <button class="addbook" id="btnAdd">+ Agregar un libro</button>
+    <p class="empty hide" id="libEmpty">
+      Todavía no hay libros.<br>Agrega el que estás leyendo.
+    </p>
+    <div style="text-align:center; margin-top:18px">
+      <button class="linkish" id="btnSettings">Ajustes</button>
+    </div>
+  </section>
+
+  <!-- ============== LIBRO ============== -->
+  <section id="vBook" class="hide">
+    <button class="linkish back" id="btnBack">← Mis libros</button>
+    <h2 class="bookhead" id="bTitle"></h2>
+    <p class="bookby" id="bAuthor"></p>
+
+    <label class="lbl" for="pos">¿Hasta dónde vas?</label>
+    <div class="slider-row">
+      <input type="range" id="pos" min="0" max="100" step="1" value="40"
+             aria-label="Porcentaje leído">
+      <span class="pct" id="posOut">40%</span>
+    </div>
+
+    <label class="lbl">¿Qué necesitas?</label>
+    <div class="cards" id="purposes"></div>
+
+    <label class="lbl">¿De qué parte?</label>
+    <div class="seg" id="scope"></div>
+    <input type="text" id="partText" class="hide" style="margin-top:9px"
+           placeholder="Ej.: la parte donde llegan a la isla"
+           autocomplete="off" enterkeyhint="done">
+
+    <div class="row2">
+      <div>
+        <label class="lbl">Qué tan largo</label>
+        <div class="seg" id="depth"></div>
+      </div>
+    </div>
+
+    <label class="lbl">Idioma de la respuesta</label>
+    <select id="lang">
+      <option value="español">Español</option>
+      <option value="inglés">Inglés</option>
+      <option value="portugués">Portugués</option>
+      <option value="francés">Francés</option>
+    </select>
+
+    <p class="hint" id="askHint">Se abre Claude con la pregunta ya escrita. Solo dale enviar.</p>
+
+    <details class="peek">
+      <summary>Ver la pregunta exacta</summary>
+      <pre class="q" id="preview"></pre>
+    </details>
+
+    <div style="text-align:center; margin-top:14px">
+      <button class="linkish" id="btnRemove">Quitar este libro</button>
+    </div>
+
+    <div class="actionbar">
+      <div class="inner">
+        <button class="primary" id="btnAsk">Pregúntale a Claude</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ============== SHEETS ============== -->
+<div class="scrim" id="scrim"></div>
+
+<div class="sheet" id="sheetAdd">
+  <h2>Agregar un libro</h2>
+  <p class="sub">Como aparece en tu Kindle. Con el título basta.</p>
+  <input type="text" id="newTitle" placeholder="Título" autocomplete="off" enterkeyhint="next">
+  <div style="height:10px"></div>
+  <input type="text" id="newAuthor" placeholder="Autor (opcional)" autocomplete="off" enterkeyhint="done">
+
+  <label class="lbl">¿Qué tipo de libro es?</label>
+  <div class="seg" id="newTipo"></div>
+
+  <div style="height:16px"></div>
+  <button class="primary" id="btnAddSave">Agregar</button>
+  <div style="height:8px"></div>
+  <button class="ghost" style="width:100%" id="btnAddCancel">Cancelar</button>
+</div>
+
+<div class="sheet" id="sheetSet">
+  <h2>Ajustes</h2>
+  <p class="sub">Esto se guarda solo en este teléfono.</p>
+
+  <label class="lbl" style="margin-top:6px">Idioma por defecto</label>
+  <select id="setLang">
+    <option value="español">Español</option>
+    <option value="inglés">Inglés</option>
+    <option value="portugués">Portugués</option>
+    <option value="francés">Francés</option>
+  </select>
+
+  <label class="lbl">Largo por defecto</label>
+  <div class="seg" id="setDepth"></div>
+
+  <label class="lbl">Leo traducciones al español</label>
+  <div class="seg" id="setTrans"></div>
+  <p class="hint" style="text-align:left; margin-top:8px">
+    Si lees el libro traducido, Claude usará los nombres tal como aparecen en tu
+    edición, no los del original.
+  </p>
+
+  <div style="height:18px"></div>
+  <button class="primary" id="btnSetClose">Listo</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   Libros con TDA
+   Un libro, qué tan lejos vas, qué necesitas → Claude con la
+   pregunta ya escrita.
+
+   No extrae nada de Amazon a propósito: no existe forma confiable
+   de hacerlo desde un teléfono, y Claude ya conoce los libros.
+   Lo único que se guarda vive en este teléfono.
+   ================================================================ */
+
+/* Vacío a propósito: este repositorio es público, y la lista de lo que
+   alguien está leyendo es suya, no del internet. Los libros llegan por la
+   liga (?add=...), así que se pueden sembrar —o agregar después— sin
+   publicar nada ni volver a desplegar. Ver README. */
+const SEED_BOOKS = [];
+
+const LS_BOOKS = "ltda.books.v1";
+const LS_SET   = "ltda.settings.v1";
+
+const DEPTHS = [
+  { id: "rapido",  label: "Rápido",  palabras: 100 },
+  { id: "normal",  label: "Normal",  palabras: 350 },
+  { id: "afondo",  label: "A fondo", palabras: 800 },
+];
+
+const SCOPES = [
+  { id: "hasta", label: "Hasta donde voy" },
+  { id: "todo",  label: "Todo el libro" },
+  { id: "parte", label: "Una parte" },
+];
+
+/* Orden fijo: lo más útil primero, y distinto según el tipo de libro.
+   En una novela lo primero es recuperar la trama; en un libro de no
+   ficción "quién es quién" casi no sirve y lo que importa son las ideas.
+   No se reordena solo — que los botones se muevan de lugar es su propia
+   forma de fricción. */
+const PURPOSES = {
+  novela: [
+    { id: "ponme",     label: "Ponme al día" },
+    { id: "quien",     label: "¿Quién es quién?" },
+    { id: "explicame", label: "Explícame esta parte" },
+    { id: "vale",      label: "¿Vale la pena seguir?" },
+    { id: "capitulos", label: "Capítulo por capítulo" },
+    { id: "temas",     label: "Temas y análisis" },
+    { id: "ideas",     label: "Ideas clave" },
+  ],
+  nofic: [
+    { id: "ideas",     label: "Ideas clave" },
+    { id: "ponme",     label: "¿Dónde me quedé?" },
+    { id: "explicame", label: "Explícame esta parte" },
+    { id: "conceptos", label: "Conceptos clave" },
+    { id: "capitulos", label: "Capítulo por capítulo" },
+    { id: "vale",      label: "¿Vale la pena seguir?" },
+    { id: "temas",     label: "Ideas de fondo" },
+  ],
+};
+
+const DEFAULT_PURPOSE = { novela: "ponme", nofic: "ideas" };
+
+const purposeList = () => PURPOSES[(state.book && state.book.tipo) || "novela"] || PURPOSES.novela;
+
+const state = {
+  books: [],
+  settings: { lang: "español", depth: "rapido", traduccion: true },
+  book: null,
+  purpose: "ponme",
+  scope: "hasta",
+};
+
+/* ---------------- almacenamiento ---------------- */
+
+const $ = (id) => document.getElementById(id);
+
+function load() {
+  try {
+    const b = JSON.parse(localStorage.getItem(LS_BOOKS) || "null");
+    if (Array.isArray(b)) state.books = b;
+  } catch {}
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_SET) || "null");
+    if (s && typeof s === "object") Object.assign(state.settings, s);
+  } catch {}
+
+  // Primera vez: sembrar con sus libros reales.
+  if (!state.books.length && SEED_BOOKS.length) {
+    state.books = SEED_BOOKS.map((s) => mkBook(s.titulo, s.autor, s.pct, s.tipo));
+    saveBooks();
+  }
+}
+
+function saveBooks() {
+  try { localStorage.setItem(LS_BOOKS, JSON.stringify(state.books)); } catch {}
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_SET, JSON.stringify(state.settings)); } catch {}
+}
+
+function mkBook(titulo, autor, pct, tipo) {
+  return {
+    id: "b" + Math.abs(hash(titulo + "|" + (autor || ""))).toString(36),
+    titulo: (titulo || "").trim(),
+    autor: (autor || "").trim(),
+    tipo: tipo === "nofic" ? "nofic" : "novela",
+    pct: typeof pct === "number" ? pct : 0,
+    lang: state.settings.lang,
+    depth: state.settings.depth,
+    used: 0,
+  };
+}
+
+function hash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+/* ---------------- construcción de la pregunta ----------------
+   Reemplazado por el sistema de prompts afinado; la forma es
+   preámbulo + propósito + alcance + largo. */
+
+function edicion() {
+  return state.settings.traduccion
+    ? "Estoy leyendo la traducción al español, así que usa los nombres de personajes, lugares y términos TAL COMO APARECEN EN LA EDICIÓN EN ESPAÑOL, no los del original."
+    : "";
+}
+
+function buildPrompt() {
+  const b = state.book;
+  if (!b) return "";
+  const pct = Number($("pos").value);
+  const depth = DEPTHS.find((d) => d.id === b.depth) || DEPTHS[0];
+  const lang = b.lang || "español";
+  const parte = ($("partText").value || "").trim();
+
+  const libro = `"${b.titulo}"` + (b.autor ? ` de ${b.autor}` : "");
+
+  const esNofic = b.tipo === "nofic";
+
+  // En una novela el límite protege el argumento; en no ficción protege
+  // el orden en que el autor construye las ideas — explicarle algo con un
+  // concepto que todavía no ha leído es igual de inútil que un spoiler.
+  const alcance = {
+    hasta: esNofic
+      ? `Voy en el ${pct}% del libro. Explícame las cosas usando ÚNICAMENTE lo que el autor ya presentó hasta ese punto. No uses conceptos, términos ni conclusiones que aparecen después del ${pct}%, aunque sean lo más conocido del libro.`
+      : `Voy en el ${pct}% del libro. NO me cuentes NADA que pase después de ese punto: ni giros, ni finales, ni quién muere, ni insinuaciones. Si algo famoso de este libro pasa después del ${pct}%, omítelo por completo.`,
+    todo:  `Puedes contarme el libro completo, incluido el final. No te guardes nada.`,
+    parte: `Háblame solo de esta parte: "${parte || "la parte que te indico"}". Si no ubicas esa parte con seguridad, dímelo en una línea en lugar de inventar.`,
+  }[state.scope];
+
+  const largo = `Responde en ${lang}, en unas ${depth.palabras} palabras, en lenguaje sencillo y directo. Párrafos cortos, sin tablas ni markdown pesado. Empieza directo con la respuesta: nada de "¡Claro!" ni repetir mi pregunta. Si no conoces bien este libro, dímelo en una línea en vez de inventar.`;
+
+  const cuerpo = {
+    ponme: esNofic
+      ? `Estoy leyendo ${libro} y perdí el hilo. Recuérdame qué ha explicado el autor hasta aquí, cómo se conecta una idea con la siguiente y hacia dónde va.`
+      : `Estoy leyendo ${libro} y perdí el hilo. Recuérdame quiénes son los personajes principales ahora mismo, qué acaba de pasar y qué estaba por descubrirse.`,
+    quien:     `Estoy leyendo ${libro}. Hazme una lista de quién es quién: cada personaje que ya apareció, quién es en una línea, cómo se relaciona con los demás y lo último importante que hizo.`,
+    conceptos: `Estoy leyendo ${libro}. Hazme una lista de los términos y conceptos que el autor ya introdujo, cada uno explicado en una o dos líneas con palabras simples, en el orden en que aparecen.`,
+    explicame: esNofic
+      ? `Estoy leyendo ${libro}. Hay una parte que leí pero no entendí. Explícamela con calma y con un ejemplo concreto: qué está diciendo el autor, por qué lo dice y para qué sirve.`
+      : `Estoy leyendo ${libro}. Hay una parte que leí pero no entendí. Explícamela con calma: qué pasó realmente, por qué pasó y por qué importa para la historia.`,
+    vale:      `Estoy leyendo ${libro} y no sé si continuar. Sin spoilers: recuérdame qué me estaba enganchando, qué quedó abierto, y dime si vale la pena seguir y por qué. Sé honesto: si el libro decae, dímelo.`,
+    ideas:     `Estoy leyendo ${libro}. Dime las ideas clave: el argumento central en una frase, las ideas principales una por una, y qué me llevo de práctico.`,
+    capitulos: esNofic
+      ? `Estoy leyendo ${libro}. Hazme un repaso capítulo por capítulo: número, qué idea presenta y para qué sirve, en dos o tres líneas cada uno.`
+      : `Estoy leyendo ${libro}. Hazme un repaso capítulo por capítulo: número, dos o tres líneas de qué pasa, y qué personaje o idea nueva aparece.`,
+    temas: esNofic
+      ? `Estoy leyendo ${libro}. Explícame el fondo: qué está intentando cambiar el autor, en qué se apoya y qué le critican.`
+      : `Estoy leyendo ${libro}. Explícame los temas de fondo: de qué trata realmente, qué está haciendo el autor y cómo está construido.`,
+  }[state.purpose];
+
+  return [cuerpo, edicion(), alcance, largo].filter(Boolean).join("\n\n");
+}
+
+/* ---------------- vistas ---------------- */
+
+function showLib() {
+  $("vBook").classList.add("hide");
+  $("vLib").classList.remove("hide");
+  renderLib();
+  window.scrollTo(0, 0);
+}
+
+function renderLib() {
+  const list = $("bookList");
+  list.innerHTML = "";
+
+  const sorted = [...state.books].sort((a, b) => (b.used || 0) - (a.used || 0));
+  for (const b of sorted) {
+    const el = document.createElement("button");
+    el.className = "book";
+    el.innerHTML = `<span class="meta"><span class="t"></span><span class="a"></span></span><span class="pc"></span>`;
+    el.querySelector(".t").textContent = b.titulo;
+    el.querySelector(".a").textContent = b.autor || "";
+    if (!b.autor) el.querySelector(".a").classList.add("hide");
+    el.querySelector(".pc").textContent = b.pct ? b.pct + "%" : "";
+    el.onclick = () => openBook(b.id);
+    list.appendChild(el);
+  }
+  $("libEmpty").classList.toggle("hide", state.books.length > 0);
+  $("tagline").textContent = state.books.length
+    ? "Retoma cualquier libro sin releer nada."
+    : "Agrega un libro y te pongo al día en segundos.";
+}
+
+function openBook(id) {
+  const b = state.books.find((x) => x.id === id);
+  if (!b) return;
+  state.book = b;
+  state.purpose = DEFAULT_PURPOSE[b.tipo] || "ponme";
+  state.scope = "hasta";
+
+  $("vLib").classList.add("hide");
+  $("vBook").classList.remove("hide");
+  $("bTitle").textContent = b.titulo;
+  $("bAuthor").textContent = b.autor || "";
+  $("bAuthor").classList.toggle("hide", !b.autor);
+  $("pos").value = b.pct || 0;
+  $("lang").value = b.lang || state.settings.lang;
+  $("partText").value = "";
+  $("partText").classList.add("hide");
+
+  renderPurposes();
+  renderScope();
+  renderDepth();
+  refresh();
+  window.scrollTo(0, 0);
+}
+
+function renderPurposes() {
+  const wrap = $("purposes");
+  const list = purposeList();
+  wrap.innerHTML = "";
+  list.forEach((p, i) => {
+    const el = document.createElement("button");
+    // Un número impar de tarjetas deja un hueco: la última ocupa el ancho.
+    const last = i === list.length - 1 && list.length % 2 === 1;
+    el.className = "card" + (p.id === state.purpose ? " on" : "") + (last ? " wide" : "");
+    el.textContent = p.label;
+    el.onclick = () => { state.purpose = p.id; renderPurposes(); refresh(); };
+    wrap.appendChild(el);
+  });
+}
+
+function renderScope() {
+  const wrap = $("scope");
+  wrap.innerHTML = "";
+  for (const s of SCOPES) {
+    const el = document.createElement("button");
+    el.className = s.id === state.scope ? "on" : "";
+    el.textContent = s.label;
+    el.onclick = () => {
+      state.scope = s.id;
+      $("partText").classList.toggle("hide", s.id !== "parte");
+      if (s.id === "parte") setTimeout(() => $("partText").focus(), 60);
+      renderScope();
+      refresh();
+    };
+    wrap.appendChild(el);
+  }
+}
+
+function renderDepth() {
+  const wrap = $("depth");
+  wrap.innerHTML = "";
+  const cur = state.book ? state.book.depth : state.settings.depth;
+  for (const d of DEPTHS) {
+    const el = document.createElement("button");
+    el.className = d.id === cur ? "on" : "";
+    el.textContent = d.label;
+    el.onclick = () => {
+      if (state.book) { state.book.depth = d.id; saveBooks(); }
+      renderDepth();
+      refresh();
+    };
+    wrap.appendChild(el);
+  }
+}
+
+function refresh() {
+  const pct = Number($("pos").value);
+  $("posOut").textContent = pct + "%";
+  $("preview").textContent = buildPrompt();
+
+  // El % solo significa algo cuando el alcance depende de él.
+  const usaPct = state.scope === "hasta";
+  $("pos").style.opacity = usaPct ? "1" : ".4";
+  $("posOut").style.opacity = usaPct ? "1" : ".4";
+
+  if (state.book) {
+    state.book.pct = pct;
+    state.book.lang = $("lang").value;
+    saveBooks();
+  }
+}
+
+/* ---------------- acción principal ---------------- */
+
+async function ask() {
+  const q = buildPrompt();
+  if (!q) return;
+
+  if (state.book) {
+    state.book.used = (state.book.used || 0) + 1;
+    saveBooks();
+  }
+
+  // Copiamos SIEMPRE, aunque el parámetro funcione: si la app de
+  // Claude ignora la pregunta pre-escrita, todavía puede pegarla.
+  try {
+    await navigator.clipboard.writeText(q);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = q;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch {}
+    ta.remove();
+  }
+
+  const url = "https://claude.ai/new?q=" + encodeURIComponent(q);
+  window.open(url, "_blank", "noopener");
+  toast("Copiada por si acaso");
+}
+
+/* ---------------- hojas ---------------- */
+
+function openSheet(id) {
+  $("scrim").classList.add("open");
+  $(id).classList.add("open");
+}
+function closeSheets() {
+  $("scrim").classList.remove("open");
+  $("sheetAdd").classList.remove("open");
+  $("sheetSet").classList.remove("open");
+}
+
+let newTipo = "novela";
+
+function renderNewTipo() {
+  const wrap = $("newTipo");
+  wrap.innerHTML = "";
+  for (const o of [{ v: "novela", l: "Novela" }, { v: "nofic", l: "No ficción" }]) {
+    const el = document.createElement("button");
+    el.className = newTipo === o.v ? "on" : "";
+    el.textContent = o.l;
+    el.onclick = () => { newTipo = o.v; renderNewTipo(); };
+    wrap.appendChild(el);
+  }
+}
+
+function addBook() {
+  const t = $("newTitle").value.trim();
+  if (!t) { $("newTitle").focus(); return; }
+  const b = mkBook(t, $("newAuthor").value, 0, newTipo);
+  if (state.books.some((x) => x.id === b.id)) {
+    toast("Ese libro ya está");
+  } else {
+    state.books.unshift(b);
+    saveBooks();
+  }
+  $("newTitle").value = "";
+  $("newAuthor").value = "";
+  newTipo = "novela";
+  closeSheets();
+  openBook(b.id);
+}
+
+function renderSettings() {
+  $("setLang").value = state.settings.lang;
+
+  const dw = $("setDepth");
+  dw.innerHTML = "";
+  for (const d of DEPTHS) {
+    const el = document.createElement("button");
+    el.className = d.id === state.settings.depth ? "on" : "";
+    el.textContent = d.label;
+    el.onclick = () => { state.settings.depth = d.id; saveSettings(); renderSettings(); };
+    dw.appendChild(el);
+  }
+
+  const tw = $("setTrans");
+  tw.innerHTML = "";
+  for (const opt of [{ v: true, l: "Sí" }, { v: false, l: "No" }]) {
+    const el = document.createElement("button");
+    el.className = state.settings.traduccion === opt.v ? "on" : "";
+    el.textContent = opt.l;
+    el.onclick = () => { state.settings.traduccion = opt.v; saveSettings(); renderSettings(); refresh(); };
+    tw.appendChild(el);
+  }
+}
+
+/* ---------------- conexiones ---------------- */
+
+$("pos").addEventListener("input", refresh);
+$("lang").addEventListener("change", refresh);
+$("partText").addEventListener("input", refresh);
+$("btnBack").onclick = showLib;
+$("btnAsk").onclick = ask;
+
+$("btnAdd").onclick = () => {
+  renderNewTipo();
+  openSheet("sheetAdd");
+  setTimeout(() => $("newTitle").focus(), 120);
+};
+$("btnAddSave").onclick = addBook;
+$("btnAddCancel").onclick = closeSheets;
+$("newTitle").addEventListener("keydown", (e) => { if (e.key === "Enter") $("newAuthor").focus(); });
+$("newAuthor").addEventListener("keydown", (e) => { if (e.key === "Enter") addBook(); });
+
+$("btnSettings").onclick = () => { renderSettings(); openSheet("sheetSet"); };
+$("setLang").addEventListener("change", () => { state.settings.lang = $("setLang").value; saveSettings(); });
+$("btnSetClose").onclick = closeSheets;
+$("scrim").onclick = closeSheets;
+
+$("btnRemove").onclick = () => {
+  if (!state.book) return;
+  state.books = state.books.filter((x) => x.id !== state.book.id);
+  saveBooks();
+  state.book = null;
+  showLib();
+  toast("Libro quitado");
+};
+
+/* ---------------- libros por liga ----------------
+   ?add=Título|Autor|tipo  (se puede repetir)
+   Así se le manda su repisa ya armada sin meter datos personales en un
+   repositorio público, y se le pueden agregar libros después con solo
+   mandarle otra liga. Al terminar se limpia la URL para no re-agregar
+   al recargar. */
+
+function importFromURL() {
+  const params = new URLSearchParams(location.search);
+  const adds = params.getAll("add");
+  if (!adds.length) return 0;
+
+  let n = 0;
+  for (const raw of adds) {
+    const [titulo, autor, tipo] = raw.split("|").map((s) => (s || "").trim());
+    if (!titulo) continue;
+    const b = mkBook(titulo, autor, 0, tipo === "nofic" ? "nofic" : "novela");
+    if (!state.books.some((x) => x.id === b.id)) {
+      state.books.push(b);
+      n++;
+    }
+  }
+  if (n) saveBooks();
+
+  history.replaceState(null, "", location.pathname);
+  return n;
+}
+
+/* ---------------- arranque ---------------- */
+
+load();
+const added = importFromURL();
+showLib();
+if (added) toast(added === 1 ? "Se agregó 1 libro" : `Se agregaron ${added} libros`);
+</script>
+</body>
+</html>
