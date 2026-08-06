@@ -568,8 +568,11 @@ const corta = (s, n) => {
 };
 
 function bloqueLibro(b, nofic) {
-  const t = corta(b.titulo, 40);
-  const a = corta(b.autor, 20);
+  // Los topes existían para no reventar la URL. Ahora la respuesta se
+  // arma aquí dentro y sobra margen, así que caben nombres completos:
+  // "Gabriel García Márq…" se veía mal en la pregunta.
+  const t = corta(b.titulo, 70);
+  const a = corta(b.autor, 40);
   const cual = a ? `"${t}" de ${a}` : `"${t}"`;
   if (!state.settings.traduccion) {
     return `Leo ${cual}. No inventes: si no lo conoces bien, dilo al final.`;
@@ -603,7 +606,7 @@ function bloqueAlcance(scope, pct, parte, nofic) {
   }
   if (scope === "parte") {
     return {
-      linea: `Me interesa esta parte: "${corta(parte, 80) || "la que te digo"}". Abre con "Te ubico: ..." nombrando la parte que crees que es; si la recuerdo mal, toma la más parecida anterior al ${pct}%. No cuentes nada posterior a esa parte ni al ${pct}%.`,
+      linea: `Me interesa esta parte: "${corta(parte, 120) || "la que te digo"}". Abre con "Te ubico: ..." nombrando la parte que crees que es; si la recuerdo mal, toma la más parecida anterior al ${pct}%. No cuentes nada posterior a esa parte ni al ${pct}%.`,
       cierre: `Relee y quita lo posterior a esa parte.`,
     };
   }
