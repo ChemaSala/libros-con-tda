@@ -898,6 +898,12 @@ function setStatus(txt, esError, cargando) {
 
 const EFFORT = { rapido: "low", normal: "medium", afondo: "high" };
 
+// El tope cuenta el razonamiento del modelo, no solo el texto que se ve. En
+// Opus 5 el razonamiento va activo por defecto y sale del mismo tope, así que
+// "A fondo" necesita mucho más margen que las palabras del resumen. Es un
+// techo, no una reserva: solo se cobra lo que de verdad se genera.
+const MAXTOK = { rapido: 8000, normal: 16000, afondo: 32000 };
+
 async function responder(q) {
   const key = state.settings.apiKey;
   const depth = (state.book && state.book.depth) || "rapido";
@@ -915,7 +921,7 @@ async function responder(q) {
       },
       body: JSON.stringify({
         model: "claude-opus-5",
-        max_tokens: 16000,
+        max_tokens: MAXTOK[depth] || 16000,
         stream: true,
         output_config: { effort: EFFORT[depth] || "medium" },
         messages: [{ role: "user", content: q }],
@@ -944,6 +950,12 @@ async function responder(q) {
         let ev;
         try { ev = JSON.parse(l.slice(5).trim()); } catch { continue; }
 
+        if (ev.type === "error") {
+          // El stream puede fallar después de un 200 (saturación, corte de red).
+          // Sin esto la respuesta se quedaba a medias y sin ningún aviso.
+          throw new Error("Se cortó la conexión con Claude a media respuesta. Inténtalo otra vez.");
+        }
+
         if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
           if (!texto) setStatus("", false, false);
           texto += ev.delta.text;
@@ -956,6 +968,8 @@ async function responder(q) {
 
     if (stop === "refusal") {
       setStatus("Claude no quiso responder esto. Prueba con “Abrir en Claude”.", true, false);
+    } else if (stop === "max_tokens") {
+      setStatus("La respuesta se quedó a medias: salió más larga de lo que cabe. Prueba con un largo menor.", true, false);
     } else if (!texto) {
       setStatus("Llegó una respuesta vacía. Inténtalo otra vez.", true, false);
     } else {
